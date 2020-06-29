@@ -1,0 +1,206 @@
+<!-- This example draws an image to a framebuffer backed by a 
+     renderbuffer. Then it reads the contents of the renderbuffer
+     and copies it to a 2D canvas. -->
+<canvas id='output' width='255' height='255'></canvas>
+<script id="vertexShader" type="x-shader/x-vertex">
+       attribute vec2 vertexPosition;
+     
+       varying vec2 textureCoord; 
+     
+       void main() {
+         gl_Position = vec4(vertexPosition, 0.0, 1.0);
+     
+         // gl_Position is [-1,-1] to [1,1], translate to [0,0] to [1,1] for texture
+         textureCoord = vec2(vertexPosition.x / 2.0 + 0.5, vertexPosition.y / 2.0 + 0.5);
+       }
+     </script>
+<script id="fragmentShader" type="x-shader/x-fragment">
+       precision mediump float;
+     
+       uniform sampler2D sampler;
+     
+       varying vec2 textureCoord;
+      
+       void main() {
+         gl_FragColor = texture2D(sampler, textureCoord);
+       }
+     </script>
+<script src='/webgl-debug.js'></script>
+<script>
+  var img = new Image();
+  img.src = 'teste1.bmp';
+  img.onload = function () {
+    var output = document.getElementById('output');
+    var offscreenCanvas = document.createElement('canvas');
+    var gl = offscreenCanvas.getContext('webgl');
+    //gl = WebGLDebugUtils.makeDebugContext(gl); // Remove this in production code
+
+    // Create the shader program
+    var program = gl.createProgram();
+
+    // Create the vertex shader
+    var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vertexShader, document.getElementById('vertexShader').textContent);
+    gl.compileShader(vertexShader);
+    gl.attachShader(program, vertexShader);
+
+    // Create fragment shader
+    var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader, document.getElementById('fragmentShader').textContent);
+    gl.compileShader(fragmentShader);
+    gl.attachShader(program, fragmentShader);
+
+    gl.linkProgram(program);
+    gl.useProgram(program);
+
+    // Get the attribute and uniform locations from the program
+    var vertexPositionLocation = gl.getAttribLocation(program, 'vertexPosition');
+    var samplerLocation = gl.getUniformLocation(program, 'sampler');
+
+    // Create a buffer with 4 points to form a square
+    var squareBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, squareBuffer);
+    var vertices = new Float32Array([
+      -1, -1,   // bottom left
+      1, -1,   // bottom right
+      -1, 1,   // top left
+      1, 1]); // top right 
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+    // Bind the triangles to the vertex shader's 'vertexPosition' attribute and draw it
+    gl.vertexAttribPointer(vertexPositionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vertexPositionLocation);
+
+    // Make a texture to store img and track it in gl's TEXTURE0 unit
+    var imgTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.uniform1i(samplerLocation, 0);  // bind fragment shader's 'sampler' to TEXTURE0
+
+    // Make a framebuffer that we will render into
+    var framebuffer = gl.createFramebuffer();
+    var framebufferWidth = output.width;
+    var framebufferHeight = output.height;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+
+    // Create a renderbuffer to store the rendered result
+    var renderbuffer = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA4, framebufferWidth, framebufferHeight);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, renderbuffer);
+
+
+    // Setup the viewport for the framebuffer
+    gl.viewport(0, 0, framebufferWidth, framebufferHeight);
+
+    // Draw img to the framebuffer
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    // Read the contents of the render buffer
+    //var data = new Uint8Array(framebufferWidth * framebufferHeight * 4);
+    //gl.readPixels(0, 0, framebufferWidth, framebufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, data);
+
+    // Copy the pixels to a 2D canvas
+    var context = output.getContext('2d');
+    var imageData = context.createImageData(framebufferWidth, framebufferHeight);
+
+    //********************************************************************
+    var pixel = new Uint8Array(framebufferWidth * framebufferHeight * 4);
+    let
+      posicao = 0,
+      primeiralinha = new Uint8Array(12),
+      segundalinha = new Uint8Array(12),
+      primeiracoluna = new Uint8Array(12),
+      segundacoluna = new Uint8Array(12),
+      primeiralinhaRed,
+      primeiralinhaGreen,
+      primeiralinhaBlue,
+      segundalinhaRed,
+      segundalinhaGreen,
+      segundalinhaBlue,
+      primeiracolunaRed,
+      primeiracolunaGreen,
+      primeiracolunaBlue,
+      segundacolunaRed,
+      segundacolunaGreen,
+      segundacolunaBlue,
+      temp;
+    for (let y = 0; y < imageData.height; y++) {
+      for (let x = 0; x < imageData.width; x++) {
+        // gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        if (x == 0 || y == 0 || y == this.altura - 1 || x == this.largura - 1) {
+          //pixel = imageData(imageData.width - x, imageData.height - y, 1, 1).data;
+          imageData.data[posicao] = pixel[0];
+          imageData.data[posicao + 1] = pixel[1];
+          imageData.data[posicao + 2] = pixel[2];
+          imageData.data[posicao + 3] = pixel[3];
+        } else {
+          gl.readPixels(x - 1, y - 1, 3, 1, gl.RGBA, gl.UNSIGNED_BYTE, primeiralinha);
+          gl.readPixels(x - 1, y + 1, 3, 1, gl.RGBA, gl.UNSIGNED_BYTE, segundalinha);
+          gl.readPixels(x - 1, y - 1, 1, 3, gl.RGBA, gl.UNSIGNED_BYTE, primeiracoluna);
+          gl.readPixels(x + 1, y - 1, 1, 3, gl.RGBA, gl.UNSIGNED_BYTE, segundacoluna);
+          primeiralinhaRed = 0;
+          primeiralinhaGreen = 0;
+          primeiralinhaBlue = 0;
+          segundalinhaRed = 0;
+          segundalinhaGreen = 0;
+          segundalinhaBlue = 0;
+          primeiracolunaRed = 0;
+          primeiracolunaGreen = 0;
+          primeiracolunaBlue = 0;
+          segundacolunaRed = 0;
+          segundacolunaGreen = 0;
+          segundacolunaBlue = 0;
+          for (temp = 0; temp < 12; temp += 4) {
+            primeiralinhaRed += primeiralinha[temp];
+            primeiralinhaGreen += primeiralinha[temp + 1];
+            primeiralinhaBlue += primeiralinha[temp + 2];
+            segundalinhaRed += segundalinha[temp];
+            segundalinhaGreen += segundalinha[temp + 1];
+            segundalinhaBlue += segundalinha[temp + 2];
+            primeiracolunaRed += primeiracoluna[temp];
+            primeiracolunaGreen += primeiracoluna[temp + 1];
+            primeiracolunaBlue += primeiracoluna[temp + 2];
+            segundacolunaRed += segundacoluna[temp];
+            segundacolunaGreen += segundacoluna[temp + 1];
+            segundacolunaBlue += segundacoluna[temp + 2];
+          }
+          imageData.data[posicao] =
+            (segundalinhaRed - primeiralinhaRed < 0
+              ? (segundalinhaRed - primeiralinhaRed) * -1
+              : segundalinhaRed - primeiralinhaRed) +
+            (segundacolunaRed - primeiracolunaRed < 0
+              ? (segundacolunaRed - primeiracolunaRed) * -1
+              : segundacolunaRed - primeiracolunaRed);
+          imageData.data[posicao + 1] =
+            (segundalinhaGreen - primeiralinhaGreen < 0
+              ? (segundalinhaGreen - primeiralinhaGreen) * -1
+              : segundalinhaGreen - primeiralinhaGreen) +
+            (segundacolunaGreen - primeiracolunaGreen < 0
+              ? (segundacolunaGreen - primeiracolunaGreen) * -1
+              : segundacolunaGreen - primeiracolunaGreen);
+          imageData.data[posicao + 2] =
+            (segundalinhaBlue - primeiralinhaBlue < 0
+              ? (segundalinhaBlue - primeiralinhaBlue) * -1
+              : segundalinhaBlue - primeiralinhaBlue) +
+            (segundacolunaBlue - primeiracolunaBlue < 0
+              ? (segundacolunaBlue - primeiracolunaBlue) * -1
+              : segundacolunaBlue - primeiracolunaBlue);
+          imageData.data[posicao + 3] = 255;
+        }
+
+        imageData.data[posicao + 3] = 255;
+        posicao += 4;
+      }
+    }
+    //********************************************************************
+    //imageData.data.set(data);
+    context.putImageData(imageData, 0, 0);
+  };
+</script>
